@@ -2,16 +2,11 @@ package handlers
 
 import "net/http"
 
-type HTTPMethods interface {
-	GET(w http.ResponseWriter, r *http.Request)
-	POST(w http.ResponseWriter, r *http.Request)
-	PATCH(w http.ResponseWriter, r *http.Request)
-	PUT(w http.ResponseWriter, r *http.Request)
-	DELETE(w http.ResponseWriter, r *http.Request)
-	OPTIONS(w http.ResponseWriter, r *http.Request)
+type Dispatcher interface {
+	GetMethod(r *http.Request) http.Handler
 }
 
-type HTTPMethodHandler struct {
+type HTTPMethodDispatcher struct {
 	GET     http.Handler
 	POST    http.Handler
 	PATCH   http.Handler
@@ -20,12 +15,11 @@ type HTTPMethodHandler struct {
 	OPTIONS http.Handler
 }
 
-func (handler HTTPMethodHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (handler HTTPMethodDispatcher) GetMethod(r *http.Request) http.Handler {
 	var method http.Handler
 	switch r.Method {
 	case http.MethodGet:
 		method = handler.GET
-		break
 	case http.MethodPost:
 		method = handler.POST
 		break
@@ -45,25 +39,18 @@ func (handler HTTPMethodHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		break
 	}
 
+	return method
+}
+
+type HTTPMethodHandler struct {
+	dispatcher Dispatcher
+}
+
+func (handler HTTPMethodHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	method := handler.dispatcher.GetMethod(r)
 	if method == nil {
 		w.WriteHeader(http.StatusMethodNotAllowed)
-	} else {
-		method.ServeHTTP(w, r)
+		return
 	}
-}
-
-func CreateHandler(methods HTTPMethods) HTTPMethodHandler {
-	return HTTPMethodHandler{
-		GET:    http.HandlerFunc(methods.GET),
-		POST:   http.HandlerFunc(methods.POST),
-		PUT:    http.HandlerFunc(methods.PUT),
-		PATCH:  http.HandlerFunc(methods.PATCH),
-		DELETE: http.HandlerFunc(methods.DELETE),
-	}
-}
-
-func CreateReadOnlyHandler(methods HTTPMethods) HTTPMethodHandler {
-	return HTTPMethodHandler{
-		GET: http.HandlerFunc(methods.GET),
-	}
+	method.ServeHTTP(w, r)
 }

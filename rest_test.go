@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -10,86 +9,112 @@ import (
 	"testing"
 )
 
+var dataStore = make(map[string]*PetObject)
+
 type PetObject struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Age  int    `json: "age,omitempty"`
 }
 
-var dataStore = make(map[string]*PetObject)
-
-type BaseTestView struct {
-	maxAge int
-}
-
-func (manager BaseTestView) GetDefault() interface{} {
-	return &PetObject{}
-}
-
-func (manager BaseTestView) SaveObject(object interface{}) {
-	dataType := object.(*PetObject)
-	dataStore[dataType.ID] = dataType
-}
-
-func (manager BaseTestView) Validate(object interface{}) error {
-	dataType := object.(*PetObject)
-	if dataType.Age > manager.maxAge {
-		return errors.New("Too old")
+func (pet *PetObject) Validate() FieldErrors {
+	if pet.Age > 10 {
+		errs := NewFieldErrors()
+		errs.Add("age", "Too old")
+		return errs
 	}
 	return nil
 }
 
-func (manager BaseTestView) GetSerializer(contentType string) Serializer {
-	return JSONSerializer{}
+func (pet *PetObject) Read(contentType string) ([]byte, error) {
+	return json.Marshal(pet)
 }
 
-type TestListView struct {
-	BaseTestView
-}
-
-func (manager TestListView) GetObjects(r *http.Request) []interface{} {
-	objects := make([]interface{}, 0)
-	for id := range dataStore {
-		objects = append(objects, dataStore[id])
+func (pet *PetObject) Update(data []byte, contentType string) error {
+	newPet := PetObject{
+		ID: pet.ID,
 	}
-	return objects
+	err := json.Unmarshal(data, &newPet)
+	if err != nil {
+		return err
+	}
+	fieldErrs := newPet.Validate()
+	if fieldErrs == nil {
+		dataStore[pet.ID] = &newPet
+	}
+	return fieldErrs
 }
 
-type TestObjectView struct {
-	BaseTestView
+func (pet *PetObject) PartialUpdate(data []byte, contentType string) error {
+	err := json.Unmarshal(data, pet)
+	if err != nil {
+		return err
+	}
+	fieldErrs := pet.Validate()
+	if fieldErrs == nil {
+		dataStore[pet.ID] = pet
+	}
+	return fieldErrs
 }
 
-func (manager TestObjectView) GetObject(r *http.Request) interface{} {
+func (pet *PetObject) Delete() {
+	delete(dataStore, pet.ID)
+}
+
+type PetObjectEndpoint struct{}
+
+func (endpoint PetObjectEndpoint) GetReadable(r *http.Request) Readable {
 	id := strings.Trim(r.URL.Path, "/")
-	data := dataStore
-	value := data[id]
+	pet := dataStore[id]
 
-	if value == nil {
+	if pet == nil {
 		return nil
 	}
-	return value
+
+	return pet
 }
 
-func (manager TestObjectView) DeleteObject(object interface{}) {
-	dataType := object.(*PetObject)
-	delete(dataStore, dataType.ID)
+var PetObjectHandler = CreateHandler(PetObjectEndpoint{})
+
+type PetList struct {
 }
 
-func (manager TestObjectView) GetSerializer(contentType string) ObjectSerializer {
-	return JSONSerializer{}
+func (petList *PetList) Read(contentType string) ([]byte, error) {
+	pets := make([]*PetObject, 0)
+	for _, value := range dataStore {
+		pets = append(pets, value)
+	}
+	return json.Marshal(pets)
 }
 
-var baseView = BaseTestView{
-	maxAge: 10,
+func (petList *PetList) Create(data []byte, contentType string) (Readable, error) {
+	pet := PetObject{}
+	if dataStore[pet.ID] != nil {
+		fieldErrs := NewFieldErrors()
+		fieldErrs.Add("id", "Field with id already exists.")
+		return nil, fieldErrs
+	}
+	err := json.Unmarshal(data, &pet)
+	if err != nil {
+		return nil, err
+	}
+
+	err = pet.Validate()
+	if err != nil {
+		return nil, err
+	}
+
+	dataStore[pet.ID] = &pet
+	return &pet, nil
 }
 
-var objectHandler = CreateObjectHandler(TestObjectView{
-	BaseTestView: baseView,
-})
+type PetListEndpoint struct{}
 
-var listHandler = CreateListHandler(TestListView{
-	BaseTestView: baseView,
-})
+func (endpoint PetListEndpoint) GetReadable(r *http.Request) Readable {
+	return &PetList{}
+}
+
+var PetListHandler = CreateHandler(PetListEndpoint{})
 
 func TestGetList(t *testing.T) {
 	dataStore = make(map[string]*PetObject) // Empty data store
@@ -109,7 +134,7 @@ func TestGetList(t *testing.T) {
 	validRequest := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
 
 	w := httptest.NewRecorder()
-	listHandler.ServeHTTP(w, validRequest)
+	PetListHandler.ServeHTTP(w, validRequest)
 	if w.Code != http.StatusOK {
 		t.Error("Should return a 200.")
 	}
@@ -118,8 +143,9 @@ func TestGetList(t *testing.T) {
 	if jsonErr != nil {
 		t.Error("Returned invalid json.")
 	}
+
 	if len(petObjects) != 2 {
-		t.Error("Did not get all objects.")
+		t.Error("Did not get all 2 objects. Only got " + strconv.Itoa(len(petObjects)) + ".")
 	}
 }
 
@@ -137,13 +163,13 @@ func TestGetObject(t *testing.T) {
 	validRequest := httptest.NewRequest(http.MethodGet, "http://example.com/"+id, nil)
 
 	w := httptest.NewRecorder()
-	objectHandler.ServeHTTP(w, badIdRequest)
+	PetObjectHandler.ServeHTTP(w, badIdRequest)
 	if w.Code != http.StatusNotFound {
 		t.Error("Should not find a resource that has not been created.")
 	}
 
 	w = httptest.NewRecorder()
-	objectHandler.ServeHTTP(w, validRequest)
+	PetObjectHandler.ServeHTTP(w, validRequest)
 	if w.Code != http.StatusOK {
 		t.Error("Should be able to get created resource.")
 	}
@@ -163,24 +189,24 @@ func TestCreateObject(t *testing.T) {
 	invalidDataRequest := httptest.NewRequest(http.MethodPost, "http://example.com/", strings.NewReader(invalidData)) // Too old
 
 	w := httptest.NewRecorder()
-	listHandler.ServeHTTP(w, invalidJSONRequest)
+	PetListHandler.ServeHTTP(w, invalidJSONRequest)
 	if w.Code != http.StatusBadRequest {
-		t.Error("Invalid request should 400.")
+		t.Error("Invalid response code " + strconv.Itoa(w.Code) + " should 400.")
 	}
-	if w.Body.String() != SERIALIZATION_ERROR_MESSAGE {
-		t.Error("Wrong error message returned.")
+	if w.Body.String() != "unexpected end of JSON input" {
+		t.Error("Wrong error message returned. Returned " + w.Body.String())
 	}
 
 	w = httptest.NewRecorder()
-	listHandler.ServeHTTP(w, invalidDataRequest)
+	PetListHandler.ServeHTTP(w, invalidDataRequest)
 	if w.Code != http.StatusBadRequest {
-		t.Error("Invalid request should 400.")
+		t.Error("Invalid response code " + strconv.Itoa(w.Code) + " should 400.")
 	}
 
 	w = httptest.NewRecorder()
-	listHandler.ServeHTTP(w, validRequest)
+	PetListHandler.ServeHTTP(w, validRequest)
 	if w.Code != http.StatusCreated {
-		t.Error("Created resource should 201.")
+		t.Error("Invalid response code " + strconv.Itoa(w.Code) + " should 201.")
 	}
 	newObj := PetObject{}
 	jsonErr := json.Unmarshal(w.Body.Bytes(), &newObj)
@@ -220,13 +246,19 @@ func TestPatchObject(t *testing.T) {
 	inValidDataRequest := httptest.NewRequest(http.MethodPatch, "http://example.com/"+id, strings.NewReader(invalidData))
 
 	w := httptest.NewRecorder()
-	objectHandler.ServeHTTP(w, wrongResourceRequest)
-	if w.Code != http.StatusNotFound {
-		t.Error("Should return not found.")
+	PetListHandler.ServeHTTP(w, validRequest)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Error("Invalid response code " + strconv.Itoa(w.Code) + " should 405. PetList does not implement Updatable")
 	}
 
 	w = httptest.NewRecorder()
-	objectHandler.ServeHTTP(w, validRequest)
+	PetObjectHandler.ServeHTTP(w, wrongResourceRequest)
+	if w.Code != http.StatusNotFound {
+		t.Error("Invalid response code " + strconv.Itoa(w.Code) + " should 404.")
+	}
+
+	w = httptest.NewRecorder()
+	PetObjectHandler.ServeHTTP(w, validRequest)
 	if w.Code != http.StatusOK {
 		t.Error("Should be able to patch resource.")
 	}
@@ -247,7 +279,7 @@ func TestPatchObject(t *testing.T) {
 	}
 
 	w = httptest.NewRecorder()
-	objectHandler.ServeHTTP(w, inValidDataRequest)
+	PetObjectHandler.ServeHTTP(w, inValidDataRequest)
 	if w.Code != http.StatusBadRequest {
 		t.Error("Should not allow patch with bad data.")
 	}
@@ -267,13 +299,19 @@ func TestDeleteObject(t *testing.T) {
 	validRequest := httptest.NewRequest(http.MethodDelete, "http://example.com/"+id, nil)
 
 	w := httptest.NewRecorder()
-	objectHandler.ServeHTTP(w, wrongResourceRequest)
+	PetListHandler.ServeHTTP(w, validRequest)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Error("Invalid response code " + strconv.Itoa(w.Code) + " should 405. PetList does not implement Deletable")
+	}
+
+	w = httptest.NewRecorder()
+	PetObjectHandler.ServeHTTP(w, wrongResourceRequest)
 	if w.Code != http.StatusNotFound {
 		t.Error("Should return not found.")
 	}
 
 	w = httptest.NewRecorder()
-	objectHandler.ServeHTTP(w, validRequest)
+	PetObjectHandler.ServeHTTP(w, validRequest)
 	if w.Code != http.StatusOK {
 		t.Error("Should be able to delete created resource.")
 	}

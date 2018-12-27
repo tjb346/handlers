@@ -26,11 +26,15 @@ func (pet *PetObject) Validate() FieldErrors {
 	return nil
 }
 
-func (pet *PetObject) Read(contentType string) ([]byte, error) {
+func (pet *PetObject) GetContentType() string {
+	return "application/json"
+}
+
+func (pet *PetObject) Read() ([]byte, error) {
 	return json.Marshal(pet)
 }
 
-func (pet *PetObject) Update(data []byte, contentType string) error {
+func (pet *PetObject) Update(data []byte) error {
 	newPet := PetObject{
 		ID: pet.ID,
 	}
@@ -45,7 +49,7 @@ func (pet *PetObject) Update(data []byte, contentType string) error {
 	return fieldErrs
 }
 
-func (pet *PetObject) PartialUpdate(data []byte, contentType string) error {
+func (pet *PetObject) PartialUpdate(data []byte) error {
 	err := json.Unmarshal(data, pet)
 	if err != nil {
 		return err
@@ -63,7 +67,7 @@ func (pet *PetObject) Delete() {
 
 type PetObjectEndpoint struct{}
 
-func (endpoint PetObjectEndpoint) GetReadable(r *http.Request) Readable {
+func (endpoint PetObjectEndpoint) GetResource(r *http.Request) Resource {
 	id := strings.Trim(r.URL.Path, "/")
 	pet := dataStore[id]
 
@@ -79,7 +83,11 @@ var PetObjectHandler = CreateHandler(PetObjectEndpoint{})
 type PetList struct {
 }
 
-func (petList *PetList) Read(contentType string) ([]byte, error) {
+func (pet *PetList) GetContentType() string {
+	return "application/json"
+}
+
+func (petList *PetList) Read() ([]byte, error) {
 	pets := make([]*PetObject, 0)
 	for _, value := range dataStore {
 		pets = append(pets, value)
@@ -87,7 +95,7 @@ func (petList *PetList) Read(contentType string) ([]byte, error) {
 	return json.Marshal(pets)
 }
 
-func (petList *PetList) Create(data []byte, contentType string) (Readable, error) {
+func (petList *PetList) Create(data []byte) (Readable, error) {
 	pet := PetObject{}
 	if dataStore[pet.ID] != nil {
 		fieldErrs := NewFieldErrors()
@@ -110,7 +118,7 @@ func (petList *PetList) Create(data []byte, contentType string) (Readable, error
 
 type PetListEndpoint struct{}
 
-func (endpoint PetListEndpoint) GetReadable(r *http.Request) Readable {
+func (endpoint PetListEndpoint) GetResource(r *http.Request) Resource {
 	return &PetList{}
 }
 
@@ -137,6 +145,9 @@ func TestGetList(t *testing.T) {
 	PetListHandler.ServeHTTP(w, validRequest)
 	if w.Code != http.StatusOK {
 		t.Error("Should return a 200.")
+	}
+	if w.Header().Get("Content-Type") != (&PetList{}).GetContentType() {
+		t.Error("Wrong content type returned. Should be equal to Resource.GetContentType()")
 	}
 	var petObjects []PetObject
 	jsonErr := json.Unmarshal(w.Body.Bytes(), &petObjects)
@@ -172,6 +183,9 @@ func TestGetObject(t *testing.T) {
 	PetObjectHandler.ServeHTTP(w, validRequest)
 	if w.Code != http.StatusOK {
 		t.Error("Should be able to get created resource.")
+	}
+	if w.Header().Get("Content-Type") != pet.GetContentType() {
+		t.Error("Wrong content type returned. Should be equal to Resource.GetContentType()")
 	}
 }
 
@@ -214,7 +228,7 @@ func TestCreateObject(t *testing.T) {
 		t.Error("Returned invalid json.")
 	}
 	if newObj.ID != id {
-		t.Error("Returned wrong object.")
+		t.Error("Returned wrong objectList.")
 	}
 
 	savedPet := dataStore[id]
@@ -261,6 +275,9 @@ func TestPatchObject(t *testing.T) {
 	PetObjectHandler.ServeHTTP(w, validRequest)
 	if w.Code != http.StatusOK {
 		t.Error("Should be able to patch resource.")
+	}
+	if w.Header().Get("Content-Type") != (&PetList{}).GetContentType() {
+		t.Error("Wrong content type returned. Should be equal to Resource.GetContentType()")
 	}
 	newObj := PetObject{}
 	jsonErr := json.Unmarshal(w.Body.Bytes(), &newObj)

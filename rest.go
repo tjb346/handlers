@@ -5,20 +5,24 @@ import (
 	"net/http"
 )
 
+type Resource interface {
+	GetContentType() string
+}
+
 type Creatable interface {
-	Create(data []byte, contentType string) (Readable, error)
+	Create(data []byte) (Readable, error)
 }
 
 type Readable interface {
-	Read(contentType string) ([]byte, error)
+	Read() ([]byte, error)
 }
 
 type Updatable interface {
-	Update(data []byte, contentType string) error
+	Update(data []byte) error
 }
 
 type PartialUpdatable interface {
-	PartialUpdate(data []byte, contentType string) error
+	PartialUpdate(data []byte) error
 }
 
 type Deletable interface {
@@ -26,23 +30,25 @@ type Deletable interface {
 }
 
 type Endpoint interface {
-	GetReadable(r *http.Request) Readable
+	GetResource(r *http.Request) Resource
 }
 
 func CreateHandler(endpoint Endpoint) http.Handler {
 	dispatcher := HTTPMethodDispatcher{
 		GET: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			readable := endpoint.GetReadable(r)
-			if readable == nil {
+			resource := endpoint.GetResource(r)
+			if resource == nil {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
 
-			if readable == nil {
-				w.WriteHeader(http.StatusNotFound)
+			readable, isReadable := resource.(Readable)
+			if !isReadable {
+				w.WriteHeader(http.StatusMethodNotAllowed)
 				return
 			}
-			data, err := readable.Read("application/json")
+
+			data, err := readable.Read()
 			if err != nil {
 				w.WriteHeader(http.StatusBadRequest)
 				return
@@ -53,15 +59,13 @@ func CreateHandler(endpoint Endpoint) http.Handler {
 			w.Write(data)
 		}),
 		POST: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			readable := endpoint.GetReadable(r)
-			if readable == nil {
+			resource := endpoint.GetResource(r)
+			if resource == nil {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
 
-			contentType := r.Header.Get("Content-Type")
-
-			creatable, isCreatable := readable.(Creatable)
+			creatable, isCreatable := resource.(Creatable)
 			if !isCreatable {
 				w.WriteHeader(http.StatusMethodNotAllowed)
 				return
@@ -73,7 +77,7 @@ func CreateHandler(endpoint Endpoint) http.Handler {
 				return
 			}
 
-			newReadable, err := creatable.Create(body, contentType)
+			newReadable, err := creatable.Create(body)
 			if err != nil {
 				w.WriteHeader(http.StatusBadRequest)
 				_, fieldErrOk := err.(FieldErrors)
@@ -84,26 +88,24 @@ func CreateHandler(endpoint Endpoint) http.Handler {
 				return
 			}
 
-			data, err := newReadable.Read("application/json")
+			data, err := newReadable.Read()
 			if err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
 
-			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Content-Type", resource.GetContentType())
 			w.WriteHeader(http.StatusCreated)
 			w.Write(data)
 		}),
 		PATCH: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			readable := endpoint.GetReadable(r)
-			if readable == nil {
+			resource := endpoint.GetResource(r)
+			if resource == nil {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
 
-			contentType := r.Header.Get("Content-Type")
-
-			partialUpdatable, isPartialUpdatable := readable.(PartialUpdatable)
+			partialUpdatable, isPartialUpdatable := resource.(PartialUpdatable)
 			if !isPartialUpdatable {
 				w.WriteHeader(http.StatusMethodNotAllowed)
 				return
@@ -115,7 +117,7 @@ func CreateHandler(endpoint Endpoint) http.Handler {
 				return
 			}
 
-			err = partialUpdatable.PartialUpdate(body, contentType)
+			err = partialUpdatable.PartialUpdate(body)
 			if err != nil {
 				w.WriteHeader(http.StatusBadRequest)
 				_, fieldErrOk := err.(FieldErrors)
@@ -126,26 +128,26 @@ func CreateHandler(endpoint Endpoint) http.Handler {
 				return
 			}
 
-			data, err := readable.Read("application/json")
-			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				return
+			readable, isReadable := resource.(Readable)
+			if isReadable {
+				data, err := readable.Read()
+				if err == nil {
+					w.Header().Set("Content-Type", resource.GetContentType())
+					w.Write(data)
+				}
 			}
 
-			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			w.Write(data)
+
 		}),
 		PUT: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			readable := endpoint.GetReadable(r)
-			if readable == nil {
+			resource := endpoint.GetResource(r)
+			if resource == nil {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
 
-			contentType := r.Header.Get("Content-Type")
-
-			updatable, isUpdatable := readable.(Updatable)
+			updatable, isUpdatable := resource.(Updatable)
 			if !isUpdatable {
 				w.WriteHeader(http.StatusMethodNotAllowed)
 				return
@@ -157,7 +159,7 @@ func CreateHandler(endpoint Endpoint) http.Handler {
 				return
 			}
 
-			err = updatable.Update(body, contentType)
+			err = updatable.Update(body)
 			if err != nil {
 				w.WriteHeader(http.StatusBadRequest)
 				_, fieldErrOk := err.(FieldErrors)
@@ -168,18 +170,19 @@ func CreateHandler(endpoint Endpoint) http.Handler {
 				return
 			}
 
-			data, err := readable.Read("application/json")
-			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				return
+			readable, isReadable := resource.(Readable)
+			if isReadable {
+				data, err := readable.Read()
+				if err == nil {
+					w.Header().Set("Content-Type", resource.GetContentType())
+					w.Write(data)
+				}
 			}
 
-			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			w.Write(data)
 		}),
 		DELETE: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			readable := endpoint.GetReadable(r)
+			readable := endpoint.GetResource(r)
 			if readable == nil {
 				w.WriteHeader(http.StatusNotFound)
 				return

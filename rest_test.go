@@ -228,7 +228,7 @@ func TestCreateObject(t *testing.T) {
 		t.Error("Returned invalid json.")
 	}
 	if newObj.ID != id {
-		t.Error("Returned wrong objectList.")
+		t.Error("Returned wrong ObjectList.")
 	}
 
 	savedPet := dataStore[id]

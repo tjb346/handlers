@@ -5,30 +5,46 @@ import (
 	"net/http"
 )
 
+// A basic REST resource. The methods it will respond to are determined by
+// which of the below interfaces are implemented.
 type Resource interface {
 	GetContentType() string
 }
 
+// A resource that implements this will respond to POST requests. Use the given
+// data to create a new object.
 type Creatable interface {
 	Create(data []byte) (Readable, error)
 }
 
+// A resource that implements this will respond to GET requests. Should return a
+// serialized representation of the object as the first return value a format
+// that matches the content type returned by GetContentType.
 type Readable interface {
 	Read() ([]byte, error)
 }
 
+// A resource that implements this will respond to PUT requests. Use the given
+// data to update the object.
 type Updatable interface {
 	Update(data []byte) error
 }
 
+// A resource that implements this will respond to PATCH requests. Use the given
+// data to update the object.
 type PartialUpdatable interface {
 	PartialUpdate(data []byte) error
 }
 
+// A resource that implements this will respond to DELETE requests. The object should
+// be deleted when called.
 type Deletable interface {
 	Delete()
 }
 
+// A REST endpoint. Should return the appropriate Resource for the given request. For
+// instance you may get the id of an object for the request and the content type from
+// the Accept header and return a resource that will serialize that object with the content type.
 type Endpoint interface {
 	GetResource(r *http.Request) Resource
 }

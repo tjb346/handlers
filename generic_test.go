@@ -61,16 +61,22 @@ func (people *People) InterfaceList() []interface{} {
 
 var people People
 
-func TestGenericJsonResource(t *testing.T) {
+func TestGenericJsonReadonlyResource(t *testing.T) {
 	person := Person{
 		Name: "Bob",
 		Age:  35,
 	}
-	personResource := JSONResource{
-		object: &person,
+	var personResource Resource
+	personResource = &JSONReadOnlyResource{
+		Object: &person,
 	}
 
-	data, err := personResource.Read()
+	personReadable, ok := personResource.(Readable)
+	if !ok {
+		t.Error("JSONResource is not Readable.")
+	}
+
+	data, err := personReadable.Read()
 	if err != nil {
 		t.Error("Error reading data.")
 	}
@@ -81,6 +87,137 @@ func TestGenericJsonResource(t *testing.T) {
 	}
 	if returnedPerson.Name != person.Name {
 		t.Error("Wrong person or person data returned.")
+	}
+
+	_, ok = personResource.(Creatable)
+	if ok {
+		t.Error("JSONReadOnlyResource should not be Creatable.")
+	}
+
+	_, ok = personResource.(PartialUpdatable)
+	if ok {
+		t.Error("JSONReadOnlyResource should not be PartialUpdatable.")
+	}
+
+	_, ok = personResource.(Deletable)
+	if ok {
+		t.Error("JSONReadOnlyResource should not be Deletable.")
+	}
+}
+
+func TestGenericJsonResource(t *testing.T) {
+	person := Person{
+		Name: "Bob",
+		Age:  35,
+	}
+	var personResource Resource
+	personResource = &JSONResource{
+		Object: &person,
+	}
+
+	personReadable, ok := personResource.(Readable)
+	if !ok {
+		t.Error("JSONResource is not Readable.")
+	}
+
+	data, err := personReadable.Read()
+	if err != nil {
+		t.Error("Error reading data.")
+	}
+	returnedPerson := Person{}
+	err = json.Unmarshal(data, &returnedPerson)
+	if err != nil {
+		t.Error("Returned invalid json.")
+	}
+	if returnedPerson.Name != person.Name {
+		t.Error("Wrong person or person data returned.")
+	}
+
+	personUpdatable, ok := personResource.(PartialUpdatable)
+	if !ok {
+		t.Error("JSONResource is not PartialUpdatable.")
+	}
+
+	newPerson := struct{ Age int }{Age: 20}
+	data, err = json.Marshal(&newPerson)
+	if err != nil {
+		t.Error("Json test err.")
+	}
+	err = personUpdatable.PartialUpdate(data)
+	if err != nil {
+		t.Error("Error updating person age.")
+	}
+	if person.Age != 20 {
+		t.Error("Age not updated.")
+	}
+	if person.Name != "Bob" {
+		t.Error("Name incorrectly changed to " + person.Name + ".")
+	}
+
+	people.store = []Person{person}
+	personDeletable, ok := personResource.(Deletable)
+	if !ok {
+		t.Error("JSONResource is not Deletable.")
+	}
+	personDeletable.Delete()
+	if len(people.store) != 0 {
+		t.Error("Person not deleted.")
+	}
+
+	_, ok = personResource.(Creatable)
+	if ok {
+		t.Error("Person resource should not be Creatable.")
+	}
+}
+
+func TestGenericJsonReadonlyListResource(t *testing.T) {
+	person1 := Person{
+		Name: "Bob",
+		Age:  35,
+	}
+	person2 := Person{
+		Name: "Jim",
+		Age:  43,
+	}
+
+	people = People{store: []Person{person1, person2}}
+
+	var peopleResource Resource
+	peopleResource = &JSONReadOnlyListResource{
+		ObjectList: people.InterfaceList(),
+	}
+
+	peopleReadable, ok := peopleResource.(Readable)
+	if !ok {
+		t.Error("JSONListReadOnlyResource is not Readable.")
+	}
+
+	data, err := peopleReadable.Read()
+	if err != nil {
+		t.Error("Error reading data.")
+	}
+	returnedPeople := make([]Person, 0)
+	err = json.Unmarshal(data, &returnedPeople)
+	if err != nil {
+		t.Error("Returned invalid json.")
+	}
+	if len(returnedPeople) != len(people.store) {
+		t.Error("Wrong number of people returned.")
+	}
+
+	_, ok = peopleReadable.(Creatable)
+	if ok {
+		t.Error("JSONReadOnlyListResource should not be Creatable.")
+	}
+
+	_, ok = peopleReadable.(PartialUpdatable)
+	if ok {
+		t.Error("JSONReadOnlyListResource should not be PartialUpdatable.")
+	}
+
+	_, ok = peopleReadable.(Deletable)
+	if ok {
+		t.Error("JJSONReadOnlyListResource should not be Deletable.")
 	}
 }
 
@@ -96,12 +233,18 @@ func TestGenericJsonListResource(t *testing.T) {
 
 	people = People{store: []Person{person1, person2}}
 
-	peopleResource := JSONListResource{
-		objectList: people.InterfaceList(),
-		creator:    &people,
+	var peopleResource Resource
+	peopleResource = &JSONListResource{
+		ObjectList: people.InterfaceList(),
+		Creator:    &people,
 	}
 
-	data, err := peopleResource.Read()
+	peopleReadable, ok := peopleResource.(Readable)
+	if !ok {
+		t.Error("JSONReadOnlyResource is not Readable.")
+	}
+
+	data, err := peopleReadable.Read()
 	if err != nil {
 		t.Error("Error reading data.")
 	}
@@ -114,12 +257,17 @@ func TestGenericJsonListResource(t *testing.T) {
 		t.Error("Wrong number of people returned.")
 	}
 
+	peopleCreatable, ok := peopleResource.(Creatable)
+	if !ok {
+		t.Error("JSONReadOnlyResource is not Creatable.")
+	}
+
 	newPerson := Person{Name: "Fred"}
 	data, err = json.Marshal(&newPerson)
 	if err != nil {
 		t.Error("Json test err.")
 	}
-	_, errs := peopleResource.Create(data)
+	_, errs := peopleCreatable.Create(data)
 	if errs == nil {
 		t.Error("Invalid name should error.")
 	}
@@ -129,7 +277,7 @@ func TestGenericJsonListResource(t *testing.T) {
 	if err != nil {
 		t.Error("Json test err.")
 	}
-	_, errs = peopleResource.Create(data)
+	_, errs = peopleCreatable.Create(data)
 	if errs != nil {
 		t.Error("Valid name should not error.")
 	}

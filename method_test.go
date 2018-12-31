@@ -18,7 +18,7 @@ var getRequest = httptest.NewRequest("GET", "http://example.com/foo", nil)
 var postRequest = httptest.NewRequest("POST", "http://example.com/foo", nil)
 
 func TestMethodDispatcher(t *testing.T) {
-	get := testDispatcher.GetMethod(getRequest)
+	get := testDispatcher.GetMethodHandler(getRequest.Method)
 	if testDispatcher.GET == nil {
 		t.Error("Dispatcher did not return correct method, returned nil.")
 	}

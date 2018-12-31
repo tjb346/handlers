@@ -2,8 +2,8 @@ package handlers
 
 import "net/http"
 
-type Dispatcher interface {
-	GetMethod(r *http.Request) http.Handler
+type HandlerDispatcher interface {
+	GetMethodHandler(requestMethod string) http.Handler
 }
 
 type HTTPMethodDispatcher struct {
@@ -15,9 +15,9 @@ type HTTPMethodDispatcher struct {
 	OPTIONS http.Handler
 }
 
-func (handler HTTPMethodDispatcher) GetMethod(r *http.Request) http.Handler {
+func (handler HTTPMethodDispatcher) GetMethodHandler(requestMethod string) http.Handler {
 	var method http.Handler
-	switch r.Method {
+	switch requestMethod {
 	case http.MethodGet:
 		method = handler.GET
 	case http.MethodPost:
@@ -43,11 +43,11 @@ func (handler HTTPMethodDispatcher) GetMethod(r *http.Request) http.Handler {
 }
 
 type HTTPMethodHandler struct {
-	dispatcher Dispatcher
+	dispatcher HandlerDispatcher
 }
 
 func (handler HTTPMethodHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	method := handler.dispatcher.GetMethod(r)
+	method := handler.dispatcher.GetMethodHandler(r.Method)
 	if method == nil {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return

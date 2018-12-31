@@ -12,12 +12,7 @@ type Person struct {
 	Age  int    `json:"age"`
 }
 
-func (person *Person) Reset() {
-	person.Name = ""
-	person.Age = 0
-}
-
-func (person *Person) Save() FieldErrors {
+func (person *Person) Validate() FieldErrors {
 	validName := true
 	for _, invalidName := range DisallowedNames {
 		if person.Name == invalidName {
@@ -29,11 +24,20 @@ func (person *Person) Save() FieldErrors {
 		errs.Add("name", "invalid")
 		return errs
 	}
+	return nil
+}
+
+func (person *Person) Reset() {
+	person.Name = ""
+	person.Age = 0
+}
+
+func (person *Person) Save() error {
 	people.store = append(people.store, *person)
 	return nil
 }
 
-func (person *Person) Delete() {
+func (person *Person) Delete() error {
 	newPeople := make([]Person, 0)
 	for _, person := range people.store {
 		if person.Name != person.Name {
@@ -41,13 +45,14 @@ func (person *Person) Delete() {
 		}
 	}
 	people.store = newPeople
+	return nil
 }
 
 type People struct {
 	store []Person
 }
 
-func (people *People) Create() Persistable {
+func (people *People) Create() SafeSavable {
 	return &Person{}
 }
 

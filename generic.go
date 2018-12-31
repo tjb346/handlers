@@ -1,18 +1,34 @@
 package handlers
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"errors"
+)
 
 const jsonContentType = "application/json"
 
-// Return the default new object. The data in POST requests will be added to this"
-type Factory interface {
-	Create() Persistable
+type Savable interface {
+	Save() error
 }
 
-type Persistable interface {
+type Validatable interface {
+	Validate() FieldErrors
+}
+
+type SafeSavable interface {
+	Savable
+	Validatable
+}
+
+// Return the default new object. The data in POST requests will be added to this"
+type Factory interface {
+	Create() SafeSavable
+}
+
+type ResourceObject interface {
+	SafeSavable
+	Deletable
 	Reset()
-	Save() FieldErrors
-	Delete()
 }
 
 // An object resource for creating a simple readonly JSON REST endpoint. Will render the given
@@ -33,7 +49,7 @@ func (resource *JSONReadOnlyResource) Read() ([]byte, error) {
 // object using json.Marshall for any GET request. Will also allow for PUT, PATCH,
 // operations using json.Unmarshall. Also allows for DELETE operations.
 type JSONResource struct {
-	Object Persistable
+	Object ResourceObject
 }
 
 func (resource *JSONResource) GetContentType() string {
@@ -54,15 +70,15 @@ func (resource *JSONResource) PartialUpdate(data []byte) error {
 	if err != nil {
 		return err
 	}
-	fieldErrs := resource.Object.Save()
+	fieldErrs := resource.Object.Validate()
 	if fieldErrs != nil {
 		return fieldErrs
 	}
-	return nil
+	return resource.Object.Save()
 }
 
-func (resource JSONResource) Delete() {
-	resource.Object.Delete()
+func (resource JSONResource) Delete() error {
+	return resource.Object.Delete()
 }
 
 // A list resource that will return a JSON array of the given ObjectList for
@@ -101,9 +117,13 @@ func (resource *JSONListResource) Create(data []byte) (Readable, error) {
 	if err != nil {
 		return nil, err
 	}
-	fieldErrs := newObj.Save()
+	fieldErrs := newObj.Validate()
 	if fieldErrs != nil {
 		return nil, fieldErrs
 	}
-	return &JSONResource{Object: newObj}, nil
+	err = newObj.Save()
+	if err != nil {
+		return nil, errors.New("error saving new object")
+	}
+	return &JSONReadOnlyResource{Object: newObj}, nil
 }

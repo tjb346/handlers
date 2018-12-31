@@ -61,13 +61,14 @@ func (pet *PetObject) PartialUpdate(data []byte) error {
 	return fieldErrs
 }
 
-func (pet *PetObject) Delete() {
+func (pet *PetObject) Delete() error {
 	delete(dataStore, pet.ID)
+	return nil
 }
 
-type PetObjectEndpoint struct{}
+type PetObjectResourceDispatcher struct{}
 
-func (endpoint PetObjectEndpoint) GetResource(r *http.Request) Resource {
+func (endpoint PetObjectResourceDispatcher) GetResource(r *http.Request) Resource {
 	id := strings.Trim(r.URL.Path, "/")
 	pet := dataStore[id]
 
@@ -78,7 +79,7 @@ func (endpoint PetObjectEndpoint) GetResource(r *http.Request) Resource {
 	return pet
 }
 
-var PetObjectHandler = CreateHandler(PetObjectEndpoint{})
+var PetObjectEndpoint = EndpointHandler{Endpoint: PetObjectResourceDispatcher{}}
 
 type PetList struct {
 }
@@ -116,13 +117,13 @@ func (petList *PetList) Create(data []byte) (Readable, error) {
 	return &pet, nil
 }
 
-type PetListEndpoint struct{}
+type PetListResourceDispatcher struct{}
 
-func (endpoint PetListEndpoint) GetResource(r *http.Request) Resource {
+func (endpoint PetListResourceDispatcher) GetResource(r *http.Request) Resource {
 	return &PetList{}
 }
 
-var PetListHandler = CreateHandler(PetListEndpoint{})
+var PetListHandler = EndpointHandler{Endpoint: PetListResourceDispatcher{}}
 
 func TestGetList(t *testing.T) {
 	dataStore = make(map[string]*PetObject) // Empty data store
@@ -174,13 +175,13 @@ func TestGetObject(t *testing.T) {
 	validRequest := httptest.NewRequest(http.MethodGet, "http://example.com/"+id, nil)
 
 	w := httptest.NewRecorder()
-	PetObjectHandler.ServeHTTP(w, badIdRequest)
+	PetObjectEndpoint.ServeHTTP(w, badIdRequest)
 	if w.Code != http.StatusNotFound {
 		t.Error("Should not find a resource that has not been created.")
 	}
 
 	w = httptest.NewRecorder()
-	PetObjectHandler.ServeHTTP(w, validRequest)
+	PetObjectEndpoint.ServeHTTP(w, validRequest)
 	if w.Code != http.StatusOK {
 		t.Error("Should be able to get created resource.")
 	}
@@ -266,13 +267,13 @@ func TestPatchObject(t *testing.T) {
 	}
 
 	w = httptest.NewRecorder()
-	PetObjectHandler.ServeHTTP(w, wrongResourceRequest)
+	PetObjectEndpoint.ServeHTTP(w, wrongResourceRequest)
 	if w.Code != http.StatusNotFound {
 		t.Error("Invalid response code " + strconv.Itoa(w.Code) + " should 404.")
 	}
 
 	w = httptest.NewRecorder()
-	PetObjectHandler.ServeHTTP(w, validRequest)
+	PetObjectEndpoint.ServeHTTP(w, validRequest)
 	if w.Code != http.StatusOK {
 		t.Error("Should be able to patch resource.")
 	}
@@ -296,7 +297,7 @@ func TestPatchObject(t *testing.T) {
 	}
 
 	w = httptest.NewRecorder()
-	PetObjectHandler.ServeHTTP(w, inValidDataRequest)
+	PetObjectEndpoint.ServeHTTP(w, inValidDataRequest)
 	if w.Code != http.StatusBadRequest {
 		t.Error("Should not allow patch with bad data.")
 	}
@@ -322,13 +323,13 @@ func TestDeleteObject(t *testing.T) {
 	}
 
 	w = httptest.NewRecorder()
-	PetObjectHandler.ServeHTTP(w, wrongResourceRequest)
+	PetObjectEndpoint.ServeHTTP(w, wrongResourceRequest)
 	if w.Code != http.StatusNotFound {
 		t.Error("Should return not found.")
 	}
 
 	w = httptest.NewRecorder()
-	PetObjectHandler.ServeHTTP(w, validRequest)
+	PetObjectEndpoint.ServeHTTP(w, validRequest)
 	if w.Code != http.StatusOK {
 		t.Error("Should be able to delete created resource.")
 	}

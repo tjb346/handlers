@@ -213,6 +213,11 @@ type deleteHandler struct {
 }
 
 func (handler deleteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	handler.deletable.Delete()
+	err := handler.deletable.Delete()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("error deleting obect"))
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }

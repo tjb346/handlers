@@ -31,7 +31,8 @@ type deletable struct {
 	resource
 }
 
-func (deletable deletable) Delete() {
+func (deletable deletable) Delete() error {
+	return nil
 }
 
 func TestRESTDispatcher(t *testing.T) {

@@ -164,13 +164,10 @@ func (handler patchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	readable, isReadable := handler.partialUpdatable.(Readable)
 	if isReadable {
-		data, err := readable.Read()
-		if err == nil {
-			w.Write(data)
-		}
+		getHandler{readable: readable}.ServeHTTP(w, r)
+	} else {
+		w.WriteHeader(http.StatusOK)
 	}
-
-	w.WriteHeader(http.StatusOK)
 }
 
 type putHandler struct {
@@ -199,13 +196,10 @@ func (handler putHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	readable, isReadable := handler.updatable.(Readable)
 	if isReadable {
-		data, err := readable.Read()
-		if err == nil {
-			w.Write(data)
-		}
+		getHandler{readable: readable}.ServeHTTP(w, r)
+	} else {
+		w.WriteHeader(http.StatusOK)
 	}
-
-	w.WriteHeader(http.StatusOK)
 }
 
 type deleteHandler struct {
